@@ -1,2 +1,2 @@
 # bbc2-examples
-Example apps for BBc-2
+Example apps and drivers for BBc-2
