@@ -1,0 +1,21 @@
+{% import 'logi/macro.html' as macros %}
+{% extends 'logi/layout.html' %}
+{% block content %}
+<h2>Readouts</h2>
+{% for (time, readout) in readouts %}
+<pre>
+{{readout}}
+</pre>
+<form action="/logi/verify" method="get">
+    <input name="verifying" type="hidden" value="{{readout}}">
+    <input name="time" type="hidden" value="{{time}}">
+    <button name="readout" type="submit">Verify Readout</button>
+    <button name="certificate" type="submit">Verify Reader Certificate</button>
+</form>
+<br/>
+{% endfor %}
+
+<form action="/logi/" method="get">
+  <button type="submit">Back To Top</button>
+</form>
+{% endblock %}
