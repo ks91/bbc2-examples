@@ -1,0 +1,12 @@
+{% import 'logi/macro.html' as macros %}
+{% extends 'logi/layout.html' %}
+{% block content %}
+<h2>Error</h2>
+<pre>
+{{message}}
+</pre>
+
+<form action="/cert/" method="get">
+  <button type="button" onclick="history.back();">Back</button>
+</form>
+{% endblock %}

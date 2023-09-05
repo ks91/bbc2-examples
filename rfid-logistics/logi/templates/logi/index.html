@@ -1,0 +1,13 @@
+{% import 'logi/macro.html' as macros %}
+{% extends 'logi/layout.html' %}
+{% block content %}
+<h1>RFID Logistics : Traceability with Proofs</h1>
+<form action="/logi/search" method="get">
+  <div>
+    Tag: <input name="tag" type="text"/><br/>
+    From: <input name="timefrom" type="datetime-local"/> &nbsp;
+    To: <input name="timeto" type="datetime-local"/>
+  </div>
+  <button type="submit" name="search">Search for Readouts</button>
+</form>
+{% endblock %}
