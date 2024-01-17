@@ -448,8 +448,9 @@ def verify_certificate(dic, args):
     dCert = get_certificate_dict(dTarget, dic['vendor'])
     document = get_document(dCert)
     dParam = {
-        'digest': binascii.b2a_hex(get_digest(document)).decode()
-    }
+        'digest': bbclib.convert_id_to_string(get_digest(document),
+                bytelen=BYTELEN_BIT256)
+     }
 
     r = requests.get(args.evi_api + '/proof', headers=HEADERS,
             data=json.dumps(dParam, indent=2))

@@ -19,7 +19,7 @@ from flask import Flask
 
 
 app = Flask(__name__)
-app.config['JSON_SORT_KEYS'] = False
+app.json.sort_keys = False
 
 
 from evi_api.body import evi_api
