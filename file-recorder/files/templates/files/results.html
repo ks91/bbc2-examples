@@ -1,0 +1,26 @@
+{% import 'files/macro.html' as macros %}
+{% extends 'files/layout.html' %}
+{% block content %}
+<h2>Results</h2>
+<h3>Evidence</h3>
+<pre>
+{{evidence}}
+</pre>
+<form action="/files/verify" method="get">
+    <input name="verifying" type="hidden" value="{{evidence}}">
+    <input name="time" type="hidden" value="{{signed_time}}">
+    <button name="certificate" type="submit">Verify Signer</button>
+</form>
+
+<h3>API Return Values</h3>
+<pre>
+{{results}}
+</pre>
+
+<h3>Time</h3>
+<p>{{time}}</p>
+
+<form action="/files/" method="get">
+  <button type="submit">Back To Top</button>
+</form>
+{% endblock %}

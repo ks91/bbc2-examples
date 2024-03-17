@@ -1,0 +1,12 @@
+{% import 'files/macro.html' as macros %}
+{% extends 'files/layout.html' %}
+{% block content %}
+<h2>Error</h2>
+<pre>
+{{message}}
+</pre>
+
+<form action="/files/" method="get">
+  <button type="button" onclick="history.back();">Back</button>
+</form>
+{% endblock %}
