@@ -22,7 +22,7 @@ Evidence service (BBc-2 App) : the following set of API is provided:
 * watchdog
 
 ## Installing dependencies
-You need to pip-install (bbc2) and Flask. Others (including BBc-2 at the moment) are currently at their late development stages, and you will need to do `git clone -b develop [URI]`  to clone the project's development branch, go to the project directory and `python setup.py sdist` to generate an installer tar ball, and then `pip install dist/[tar.gz file]`.
+You need to pip-install py-bbclib, watchdog and Flask. Others (including bbc2 at the moment) are currently at their late development stages, and you will need to do `git clone -b develop [URI]`  to clone the project's development branch, go to the project directory and `python setup.py sdist` to generate an installer tar ball, and then `pip install dist/[tar.gz file]`.
 
 ## File record, its evidence and public key certificates
 **Sample file record**
@@ -70,7 +70,9 @@ Specifically, the file name, as well as other information, is kept private from 
 Before verification, these dictionary structures are accompanied with a 'proof' structure that has the specification for how blockchain was used and a Merkle subtree, the same as our 'certify' example.
 
 ## How to use this example
-Below, it is assumed that "bbc_serv.py" runs at the user's home directory, and Ethereum's sepolia testnet is used (and you have a sufficient amount of ETH (1 would be more than enough) in an account in sepolia). At first, "bbc_serv.py" should be stopped.
+Below, it is assumed that "bbc_serv.py" runs at the user's home directory, and Ethereum's Sepolia testnet is used (and you have a sufficient amount of ETH (1 would be more than enough) in an account in Sepolia). At first, "bbc_serv.py" should be stopped.
+
+To use Sepolia testnet, you need to set up brownie for that. You may want to refer to https://speakerdeck.com/beyondblockchain/bbc-2-hands-on-basic-installation?slide=17 and https://speakerdeck.com/beyondblockchain/bbc-2-hands-on-basic-installation?slide=18 (these slides are in Japanese)
 
 1. Set up ledger subsystem (this writes to BBc-2's config file)
     ```
@@ -80,7 +82,7 @@ Below, it is assumed that "bbc_serv.py" runs at the user's home directory, and E
 
 2. Start bbc_serv.py
 
-3. Set up the API
+3. Set up the API (index.py of this example needs to run)
 
     POST 'api/setup' to set up.
     ```shell
@@ -98,11 +100,11 @@ Below, it is assumed that "bbc_serv.py" runs at the user's home directory, and E
     bbc_eth_tool.py -w ~/.bbc2 -d [domain id] config_tree [number of documents] [seconds]
     ```
         
-    This configures the subsystem so that Merkle tree is closed and Merkle root is written to a Ethereum blockchain (you may want to set it to Sepolia testnet) upon reaching either the specified number of processed documents or the specified seconds.
+    This configures the subsystem so that Merkle tree is closed and Merkle root is written to a Ethereum blockchain upon reaching either the specified number of processed documents or the specified seconds.
 
 6. Start bbc_serv.py
 
-7. Start index.py of this example
+7. (Re)start index.py of this example
 
     By default, the server runs at "http://localhost:5000/files".
 

@@ -217,6 +217,7 @@ class Recorder:
         logger = getLogger(__name__)
 
         filename = os.path.basename(filepath)
+        logger.info(f"file name: {filename}")
         timestamp = int(os.path.getmtime(filepath))
 
         h = hashlib.new('sha256')
@@ -236,7 +237,7 @@ class Recorder:
 
         assert record.verify() == True # testing just in case
         timestring = datetime.datetime.fromtimestamp(record.timestamp)
-        logger.info(f"{record.filename} at {timestring}")
+        logger.info(f"created at: {timestring}")
 
         dEvi = get_record_dict(record)
         document = get_document(dEvi)
@@ -517,7 +518,7 @@ def run_recorder(dic, args):
 
     observer = Observer()
     observer.schedule(EventHandler(recorder, args), path=dRecorder['directory'],
-            recursive=True)
+            recursive=False)
     observer.start()
 
     try:
