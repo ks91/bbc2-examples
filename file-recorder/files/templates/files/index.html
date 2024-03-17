@@ -1,0 +1,12 @@
+{% import 'files/macro.html' as macros %}
+{% extends 'files/layout.html' %}
+{% block content %}
+<h1>File Recorder : Data with Proofs of Existence</h1>
+<form action="/files/search" method="get">
+  <div>
+    From: <input name="timefrom" type="datetime-local"/> &nbsp;
+    To: <input name="timeto" type="datetime-local"/>
+  </div>
+  <button type="submit" name="search">Search for Records</button>
+</form>
+{% endblock %}

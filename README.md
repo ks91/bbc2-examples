@@ -7,6 +7,7 @@ Example apps and driver libs for BBc-2
 ## Apps
 * **certify** : basic certificate registration and verification demo
 * **rfid-logistics** : proof of authenticity of logistics information with passive RFID tags and blockchain
+* **file-recorder** : proof of authenticity of general files
 
 
 Others are coming soon.

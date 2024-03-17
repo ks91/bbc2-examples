@@ -1,0 +1,21 @@
+{% import 'files/macro.html' as macros %}
+{% extends 'files/layout.html' %}
+{% block content %}
+<h2>Records</h2>
+{% for (time, record) in records %}
+<pre>
+{{record}}
+</pre>
+<form action="/files/verify" method="get">
+    <input name="verifying" type="hidden" value="{{record}}">
+    <input name="time" type="hidden" value="{{time}}">
+    <button name="record" type="submit">Verify Record</button>
+    <button name="certificate" type="submit">Verify Recorder Certificate</button>
+</form>
+<br/>
+{% endfor %}
+
+<form action="/files/" method="get">
+  <button type="submit">Back To Top</button>
+</form>
+{% endblock %}
