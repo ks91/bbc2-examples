@@ -292,9 +292,12 @@ def argument_parser():
     argparser.add_argument('-k', '--key', type=int,
             default=KEY_DEFAULT,
             help='shared key number between recorder service and clients')
+    argparser.add_argument('-p', '--poll', action='store_true',
+            help='poll the directory to watch')
     argparser.add_argument('-r', '--rec_api', type=str,
             default=PREFIX_REC_SERVICE_API_DEFAULT,
             help='URL prefix of the recorder service API')
+
 
     # list command
     parser = subparsers.add_parser('list',
@@ -515,16 +518,28 @@ def run_recorder(dic, args):
         return
 
     recorder = Recorder.from_dict(dRecorder)
+    path = dRecorder['directory']
 
-    observer = Observer()
-    observer.schedule(EventHandler(recorder, args), path=dRecorder['directory'],
-            recursive=False)
-    observer.start()
+    if args.poll:
+        files = os.listdir(path)
+
+    else:
+        observer = Observer()
+        observer.schedule(EventHandler(recorder, args), path=path,
+                recursive=False)
+        observer.start()
 
     try:
         logger.info('*** opened ***')
         while True:
-            time.sleep(1)
+            time.sleep(5)
+
+            if args.poll:
+                filesNow = os.listdir(path)
+                for file in filesNow:
+                    if file not in files:
+                        recorder.record(os.path.join(path, file), args)
+                files = filesNow
 
     except KeyboardInterrupt:
         pass
