@@ -102,7 +102,9 @@ def search_records():
 
     aRecord = []
     for record in res['records']:
-        record['signature-algorithm'] = LIST_KEY_TYPES[record['algo']]
+        algo = record.get('algo')
+        if isinstance(algo, int) and 0 <= algo < len(LIST_KEY_TYPES):
+            record['signature-algorithm'] = LIST_KEY_TYPES[algo]
         record['date-time'] = str(datetime.fromtimestamp(
                 record['timestamp']))
 
@@ -111,64 +113,86 @@ def search_records():
     return render_template('files/records.html', records=aRecord)
 
 
-@files.route('/verify', methods=['GET'])
+@files.route('/verify', methods=['GET', 'POST'])
 def verify():
-    verifying = request.args.get('verifying')
-
+    verifying = request.args.get('verifying') or request.form.get('verifying')
+    if not verifying:
+        return render_template('files/error.html', message='No record specified for verification.')
     dic = json.loads(verifying)
 
-    if 'record' in request.args:
-        record = Record.from_dict(dic)
-        dVer = get_record_dict(record)
-        lTimeSigned = dic['timestamp']
-
-    elif 'certificate' in request.args:
+    dVer = None
+    lTimeSigned = None
+    # Use button name to distinguish certificate vs record verification
+    if 'certificate' in request.args:
         lTime = int(request.args.get('time'))
-
         dParam = {
             'public_key': dic['pubkey'],
             'time': lTime
         }
-
-        r = requests.get(PREFIX_REC_API + '/certificate', headers=HEADERS,
-                data=json.dumps(dParam, indent=2))
+        r = requests.get(PREFIX_REC_API + '/certificate', headers=HEADERS, data=json.dumps(dParam, indent=2))
         res = r.json()
-
         if r.status_code != 200:
-            return render_template('files/error.html',
-                    message=json.dumps(res, indent=2))
-
+            return render_template('files/error.html', message=json.dumps(res, indent=2))
         dVer = res
-        lTimeSigned = res['issued_at']
-
+        lTimeSigned = res.get('issued_at')
+    elif 'key' in dic and 'digest' in dic:
+        rec_obj = Record.from_dict(dic)
+        if rec_obj.sig:
+            dVer = get_record_dict(rec_obj)
+            lTimeSigned = dic.get('timestamp')
+        else:
+            # Forward traversal to checkpoint (BFS)
+            from collections import deque
+            visited = set()
+            start_digest = binascii.b2a_hex(rec_obj.get_signed_data()).decode()
+            queue = deque([start_digest])
+            found_checkpoint = False
+            while queue:
+                current_digest = queue.popleft()
+                if current_digest in visited:
+                    continue
+                visited.add(current_digest)
+                dParam = {'digest': current_digest}
+                r = requests.post(PREFIX_REC_API + '/forward', headers=HEADERS, data=json.dumps(dParam, indent=2))
+                if r.status_code != 200:
+                    return render_template('files/results.html', result=False, details='Forward search failed')
+                forward_records = r.json().get('records', [])
+                if not forward_records:
+                    continue
+                for fwd in forward_records:
+                    fwd_obj = Record.from_dict(fwd)
+                    if fwd_obj.sig:
+                        dVer = get_record_dict(fwd_obj)
+                        lTimeSigned = fwd.get('timestamp')
+                        found_checkpoint = True
+                        break
+                    next_digest = binascii.b2a_hex(fwd_obj.get_signed_data()).decode()
+                    if next_digest not in visited:
+                        queue.append(next_digest)
+                if found_checkpoint:
+                    break
+            if not found_checkpoint or dVer is None:
+                return render_template('files/results.html', result=False, details='No checkpoint found')
     else:
-        return render_template('files/error.html',
-                message='button name is not recognized.')
+        return render_template('files/error.html', message='Unknown verification type.')
 
+    # Common: get document and digest
     document = get_document(dVer)
+    digest = get_digest(document)
     dParam = {
-        'digest': bbclib.convert_id_to_string(get_digest(document),
-                bytelen=BYTELEN_BIT256)
+        'digest': binascii.b2a_hex(digest).decode()
     }
-
-    r = requests.get(PREFIX_EVI_API + '/proof', headers=HEADERS,
-        data=json.dumps(dParam, indent=2))
+    # Get proof from evidence service
+    r = requests.get(PREFIX_EVI_API + '/proof', headers=HEADERS, data=json.dumps(dParam, indent=2))
     res = r.json()
-
     if r.status_code != 200:
-        return render_template('files/error.html',
-                message=json.dumps(res, indent=2))
-
+        return render_template('files/error.html', message=json.dumps(res, indent=2))
     dVer['proof'] = res['proof']
-
-    r = requests.get(PREFIX_CERTIFY_API + '/verify', headers=HEADERS,
-            data=json.dumps(dVer, indent=2))
-    res =r.json()
-
+    # Verify using certify-api
+    r = requests.get(PREFIX_CERTIFY_API + '/verify', headers=HEADERS, data=json.dumps(dVer, indent=2))
+    res = r.json()
     if r.status_code != 200:
-        return render_template('files/error.html',
-                message=json.dumps(res, indent=2))
-
+        return render_template('files/error.html', message=json.dumps(res, indent=2))
     return render_template('files/results.html',
             evidence=json.dumps(dVer, indent=2),
             results=json.dumps(res, indent=2), signed_time=lTimeSigned,

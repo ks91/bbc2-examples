@@ -97,6 +97,12 @@ class Record:
         self.digest = digest
         self.timestamp = timestamp
         self.location = location
+        # New fields for backchain functionality
+        self.prev_digest = None
+        self.skip_digests = []
+        self.algo = None
+        self.sig = None
+        self.pubkey = None
 
 
     @staticmethod
@@ -105,21 +111,28 @@ class Record:
         digest = binascii.a2b_hex(dic['digest'])
         record = Record(dic['key'], dic['filename'], digest, dic['timestamp'],
                 Location(ld['latitude'], ld['longitude'], ld['altitude']))
-        record.algo = dic['algo']
-        record.sig = binascii.a2b_hex(dic['sig'])
-        record.pubkey = binascii.a2b_hex(dic['pubkey'])
-
+        record.algo = dic.get('algo')
+        sig_hex = dic.get('sig')
+        record.sig = binascii.a2b_hex(sig_hex) if sig_hex else None
+        pubkey_hex = dic.get('pubkey')
+        record.pubkey = binascii.a2b_hex(pubkey_hex) if pubkey_hex else None
+        # Load backchain fields
+        if 'prev_digest' in dic:
+            record.prev_digest = binascii.a2b_hex(dic['prev_digest'])
+        if 'skip_digests' in dic:
+            record.skip_digests = [binascii.a2b_hex(d) for d in dic['skip_digests']]
         return record
 
 
     @staticmethod
     def from_tuple(dataTuple):
-        key, filename, digest, timestamp, location, algo, sig, pubkey = dataTuple
+        key, filename, digest, timestamp, location, algo, sig, pubkey, prev_digest, skip_digests = dataTuple
         record = Record(key, filename, digest, timestamp, location)
         record.algo = algo
         record.sig = sig
         record.pubkey = pubkey
-
+        record.prev_digest = prev_digest
+        record.skip_digests = skip_digests if skip_digests else []
         return record
 
 
@@ -131,7 +144,6 @@ class Record:
     def get_digest_1(self):
         dat = bytearray(bbclib_binary.to_4byte(self.key))
         dat.extend(self.filename.encode())
-
         return hashlib.sha256(bytes(dat)).digest()
 
 
@@ -139,22 +151,26 @@ class Record:
         dat = bytearray(self.digest)
         dat.extend(bbclib_binary.to_8byte(self.timestamp))
         dat.extend(self.location.serialize_for_digest())
-
+        if self.prev_digest:
+            dat.extend(self.prev_digest)
+        for skip_digest in self.skip_digests:
+            if skip_digest:
+                dat.extend(skip_digest)
         return hashlib.sha256(bytes(dat)).digest()
 
 
     def get_signed_data(self):
         digest1 = self.get_digest_1()
         digest2 = self.get_digest_2()
-
         dat = bytearray(digest1)
         dat.extend(digest2)
-
         return (hashlib.sha256(bytes(dat)).digest())
 
 
-    def serialize(self):
-        pass # FIXME
+    def set_backchain_info(self, prev_digest=None, skip_digests=None):
+        """Set backchain information"""
+        self.prev_digest = prev_digest
+        self.skip_digests = skip_digests if skip_digests else []
 
 
     def sign(self, keypair):
@@ -164,7 +180,7 @@ class Record:
 
 
     def to_dict(self):
-        return {
+        result = {
             'key': self.key,
             'filename': self.filename,
             'digest': binascii.b2a_hex(self.digest).decode(),
@@ -175,9 +191,17 @@ class Record:
                 'altitude': self.location.altitude
             },
             'algo': self.algo,
-            'sig': binascii.b2a_hex(self.sig).decode(),
-            'pubkey': binascii.b2a_hex(self.pubkey).decode()
+            'sig': binascii.b2a_hex(self.sig).decode() if self.sig else None,
+            'pubkey': binascii.b2a_hex(self.pubkey).decode() if self.pubkey else None
         }
+        # Add backchain fields only if present
+        if self.prev_digest:
+            result['prev_digest'] = binascii.b2a_hex(self.prev_digest).decode()
+        if self.skip_digests:
+            skips = [binascii.b2a_hex(d).decode() for d in self.skip_digests if d]
+            if skips:
+                result['skip_digests'] = skips
+        return result
 
 
     def to_tuple(self):
@@ -189,29 +213,84 @@ class Record:
             self.location,
             self.algo,
             self.sig,
-            self.pubkey
+            self.pubkey,
+            self.prev_digest,
+            self.skip_digests
         )
 
 
     def verify(self):
+        if not self.sig or not self.pubkey:
+            return False
         keypair = bbclib.KeyPair(curvetype=self.algo, pubkey = self.pubkey)
-
         return keypair.verify(self.get_signed_data(), self.sig)
+
+
+class BackchainManager:
+    """Backchain management class"""
+    def __init__(self, a=0, s=1):
+        """
+        Args:
+            a: Offset for skip digest (0: no chain, 1: prev_digest only, >1: prev_digest and (a-1) skip_digests)
+            s: Checkpoint interval (every s-th record is a checkpoint)
+        """
+        self.a = a
+        self.s = s
+        self.record_count = 0
+        self._recent_digests = [None] * max(1, a)  # ring buffer, at least size 1 for prev_digest
+        self._recent_index = 0
+
+    def get_prev_and_skip_digests(self):
+        if self.a == 0:
+            return None, []
+        prev_digest = self._recent_digests[(self._recent_index - 1) % len(self._recent_digests)] if self.a >= 1 else None
+        skip_digests = []
+        if self.a > 1:
+            # Only include the a-th previous digest
+            idx = (self._recent_index - self.a) % len(self._recent_digests)
+            val = self._recent_digests[idx]
+            if val:
+                skip_digests.append(val)
+        return prev_digest, skip_digests
+
+    def update_ring(self, digest):
+        self._recent_digests[self._recent_index] = digest
+        self._recent_index = (self._recent_index + 1) % len(self._recent_digests)
+
+    def should_be_checkpoint(self):
+        """Determine if this should be a checkpoint"""
+        return (self.record_count % self.s) == 0
+
+    def create_record_with_backchain(self, key, filename, digest, timestamp, location, store, keypair):
+        """Create a record with backchain information and checkpoint logic"""
+        prev_digest, skip_digests = self.get_prev_and_skip_digests()
+        record = Record(key, filename, digest, timestamp, location)
+        record.set_backchain_info(prev_digest, skip_digests)
+        self.record_count += 1
+        is_checkpoint = self.should_be_checkpoint()
+        if is_checkpoint:
+            record.sign(keypair)
+        else:
+            record.sig = None
+            record.algo = None
+            record.pubkey = None
+        # Update ring buffer with this record's digest (after signature)
+        self.update_ring(record.get_signed_data())
+        return record
 
 
 class Recorder:
 
-    def __init__(self, location, keypair):
+    def __init__(self, location, keypair, backchain_manager=None):
         self.location = location
         self.keypair = keypair
-
+        self.backchain_manager = backchain_manager
 
     @staticmethod
-    def from_dict(dic):
+    def from_dict(dic, backchain_manager=None):
         location = Location(dic['latitude'], dic['longitude'], dic['altitude'])
         keypair = get_keypair(dic)
-        return Recorder(location, keypair)
-
+        return Recorder(location, keypair, backchain_manager=backchain_manager)
 
     def record(self, filepath, args):
         logger = getLogger(__name__)
@@ -232,27 +311,42 @@ class Recorder:
         digest = h.digest()
         logger.info(f"file digest: {binascii.b2a_hex(digest).decode()}")
 
-        record = Record(args.key, filename, digest, timestamp, self.location)
-        record.sign(self.keypair)
+        # Use persistent backchain_manager if available
+        if self.backchain_manager:
+            from rec_api.body import Store
+            store = Store()
+            try:
+                record = self.backchain_manager.create_record_with_backchain(
+                    args.key, filename, digest, timestamp, self.location, store, self.keypair
+                )
+            finally:
+                store.close()
+        else:
+            # Traditional method
+            record = Record(args.key, filename, digest, timestamp, self.location)
+            record.sign(self.keypair)
 
-        assert record.verify() == True # testing just in case
+        # Verification
+        if record.sig:
+            assert record.verify() == True
+        
         timestring = datetime.datetime.fromtimestamp(record.timestamp)
         logger.info(f"created at: {timestring}")
 
-        dEvi = get_record_dict(record)
-        document = get_document(dEvi)
-        dParam = {
-            'digest': binascii.b2a_hex(get_digest(document)).decode(),
-            'key': dEvi['digest_1']
-        }
-
-        r = requests.post(args.evi_api + '/evidence', headers=HEADERS,
-                data=json.dumps(dParam, indent=2))
-        res = r.json()
-
-        if r.status_code != 200:
-            logger.warn('registering evidence failed: {0}'.format(
-                    json.dumps(res, indent=2)))
+        # Only checkpoint records (with signature) are registered to evidence service
+        if record.sig:
+            dEvi = get_record_dict(record)
+            document = get_document(dEvi)
+            dParam = {
+                'digest': binascii.b2a_hex(get_digest(document)).decode(),
+                'key': dEvi['digest_1']
+            }
+            r = requests.post(args.evi_api + '/evidence', headers=HEADERS,
+                    data=json.dumps(dParam, indent=2))
+            res = r.json()
+            if r.status_code != 200:
+                logger.warn('registering evidence failed: {0}'.format(
+                        json.dumps(res, indent=2)))
 
         r = requests.post(args.rec_api + '/record', headers=HEADERS,
                 data=json.dumps(record.to_dict(), indent=2))
@@ -297,7 +391,10 @@ def argument_parser():
     argparser.add_argument('-r', '--rec_api', type=str,
             default=PREFIX_REC_SERVICE_API_DEFAULT,
             help='URL prefix of the recorder service API')
-
+    argparser.add_argument('-a', '--skip-offset', type=int, default=1,
+            help='Offset for skip digest (a)')
+    argparser.add_argument('-s', '--checkpoint-interval', type=int, default=1,
+            help='Checkpoint interval (s)')
 
     # list command
     parser = subparsers.add_parser('list',
@@ -412,8 +509,8 @@ def get_record_dict(record):
         'digest_1': binascii.b2a_hex(record.get_digest_1()).decode(),
         'digest_2': binascii.b2a_hex(record.get_digest_2()).decode(),
         'algo': LIST_KEY_TYPES[record.algo],
-        'sig': binascii.b2a_hex(record.sig).decode(),
-        'pubkey': binascii.b2a_hex(record.pubkey).decode()
+        'sig': binascii.b2a_hex(record.sig).decode() if record.sig else None,
+        'pubkey': binascii.b2a_hex(record.pubkey).decode() if record.pubkey else None
     }
 
 
@@ -517,7 +614,9 @@ def run_recorder(dic, args):
         print("Recorder '{0}' is not found.".format(args.name))
         return
 
-    recorder = Recorder.from_dict(dRecorder)
+    # Create persistent BackchainManager for this Recorder
+    backchain_manager = BackchainManager(a=args.skip_offset, s=args.checkpoint_interval)
+    recorder = Recorder.from_dict(dRecorder, backchain_manager=backchain_manager)
     path = dRecorder['directory']
 
     if args.poll:

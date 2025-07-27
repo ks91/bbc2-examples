@@ -2,11 +2,54 @@
 {% extends 'files/layout.html' %}
 {% block content %}
 <h1>File Recorder : Data with Proofs of Existence</h1>
-<form action="/files/search" method="get">
-  <div>
-    From: <input name="timefrom" type="datetime-local"/> &nbsp;
-    To: <input name="timeto" type="datetime-local"/>
-  </div>
-  <button type="submit" name="search">Search for Records</button>
-</form>
+
+<div class="search-section">
+    <h2>Search Records</h2>
+    <form action="/files/search" method="get">
+        <div>
+            From: <input name="timefrom" type="datetime-local"/> &nbsp;
+            To: <input name="timeto" type="datetime-local"/>
+        </div>
+        <button type="submit" name="search">Search for Records</button>
+    </form>
+</div>
+
+<style>
+.search-section {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.search-section h2 {
+    margin-top: 0;
+    color: #333;
+}
+
+form div {
+    margin-bottom: 15px;
+}
+
+button {
+    background-color: #007bff;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+input[type="datetime-local"] {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+</style>
 {% endblock %}

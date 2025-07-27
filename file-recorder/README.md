@@ -1,12 +1,13 @@
 File Recorder
 ==========
-This app provides simple Web APIs and a command line tool to demonstrate how we can provide proof of authenticity of general files.
+This app provides simple Web APIs and a command line tool to demonstrate how we can provide proof of authenticity of general files with fault-tolerant backchaining.
 
 Recorder service (General App) : the following set of API is provided:
 * **/rec-api/certificate** [GET] returns a certificate for a public key stated valid for the specified point of time.
 * **/rec-api/record** [POST] registers a single record of a file (used by a recorder).
 * **/rec-api/records** [GET] returns a set of records matching the input.
 * **/rec-api/setup** [POST] sets the environment (a simple database).
+* **/rec-api/forward** [POST] returns records that reference a given digest in their backchain (for verification).
 
 Evidence service (BBc-2 App) : the following set of API is provided:
 * **/evi-api/evidence** [POST] registers a single evidence, used by a recorder (for records) or a vendor (for public key certificates).
@@ -14,6 +15,30 @@ Evidence service (BBc-2 App) : the following set of API is provided:
 * **/evi-api/verify** [GET] verifies an evidence accompanied with the proof structure (provided for convenience).
 * **/evi-api/setup** [POST] sets the environment (a BBc-2 domain and a simple database).
 
+## New Features: Fault-Tolerant Backchaining
+
+This version introduces a fault-tolerant backchaining system that improves verification reliability even when some records are lost:
+
+### Key Concepts
+- **Backchaining**: Records are cryptographically linked using SHA256 digests
+- **Checkpoints**: Only every `s` records are signed and registered with BBc-2
+- **Skip Digests**: Each record maintains a digest of the `a`-th previous record for fault tolerance
+- **Forward Traversal**: Non-signed records can be verified by traversing the backchain to find a valid checkpoint
+
+### Parameters
+- **`a` (skip offset)**: How many records back to maintain a skip digest (default: 0)
+  - `a = 0`: No backchaining
+  - `a = 1`: Only prev_digest (immediate predecessor)
+  - `a > 1`: Both prev_digest and skip_digest (a-th predecessor)
+- **`s` (checkpoint interval)**: How often to create signed checkpoints (default: 1)
+  - `s = 1`: Sign every record
+  - `s > 1`: Sign every s-th record only
+
+### Fault Tolerance
+- Records can be marked as "lost" with configurable probability
+- Checkpoints can be protected from loss (configurable)
+- Forward traversal algorithm finds valid checkpoints even with record loss
+- Success rates typically 80-90% with 40% loss rate using appropriate `a` and `s` values
 
 ## Dependencies
 * bbc2
@@ -25,7 +50,7 @@ Evidence service (BBc-2 App) : the following set of API is provided:
 You need to pip-install py-bbclib, watchdog and Flask. Others (including bbc2 at the moment) are currently at their late development stages, and you will need to do `git clone -b develop [URI]`  to clone the project's development branch, go to the project directory and `python setup.py sdist` to generate an installer tar ball, and then `pip install dist/[tar.gz file]`.
 
 ## File record, its evidence and public key certificates
-**Sample file record**
+**Sample file record (with backchain)**
 ```
 {
   "key": 1,
@@ -39,7 +64,9 @@ You need to pip-install py-bbclib, watchdog and Flask. Others (including bbc2 at
   },
   "algo": 2,
   "sig": "e312d1fcefd2e5d2de15314de73227d9be7c935e1aa648fff2981f8c38a61e2f3ad50710eb0c2ffc46e3a998f1f041e41c3797f03be7a9edb34e92ea9c20fd35",
-  "pubkey": "04844e144d23aa63403b22f5f8365a0c9e6e3bfec31a59b90aa561bbd3bf6bfe541a49838a52e5957266c275efbf3b030db9ac5f2d31adcecfa9751c260ab03453"
+  "pubkey": "04844e144d23aa63403b22f5f8365a0c9e6e3bfec31a59b90aa561bbd3bf6bfe541a49838a52e5957266c275efbf3b030db9ac5f2d31adcecfa9751c260ab03453",
+  "prev_digest": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+  "skip_digests": ["f1e2d3c4b5a6789012345678901234567890abcdef1234567890abcdef123456"]
 }
 ```
 **Sample evidence** (supposedly of the above record)
@@ -122,6 +149,44 @@ This creates a vendor keypair and a configuration file 'config.json'. Other than
   * **DIRECTORY** : path of the directory to look for new files.
   * **LATITUDE, LONGITUDE, ALTITUDE** : GPS location of the recorder.
 * **remove** NAME : removes the specified recorder.
-* **run** NAME : runs the specified recorder; logger messages are put to a file named 'NAME.log'; execution can be stopped by a keyboard interrupt (ctrl+C).
+* **run** NAME [-a SKIP_OFFSET] [-s CHECKPOINT_INTERVAL] : runs the specified recorder with optional backchain parameters.
+  * **-a, --skip-offset** : How many records back to maintain skip digest (default: 0)
+  * **-s, --checkpoint-interval** : How often to create signed checkpoints (default: 1)
+  * Logger messages are put to a file named 'NAME.log'; execution can be stopped by a keyboard interrupt (ctrl+C).
 * **verify** {NAME, vendor}: verifies the certificate for a recorder (signed by the vendor) or the vendor (self-signed).
+
+## Testing Fault Tolerance
+
+A test script `test_backchain.py` is provided to test the fault tolerance features:
+
+```bash
+python test_backchain.py [directory] [a_value]
+```
+
+Where `[a_value]` should be the maximum of `a` and the next checkpoint interval.
+
+This script:
+1. Creates test files (1.txt, 2.txt, ..., n.txt) in the specified directory
+2. Records them using the backchain system with the specified `a` value
+3. Simulates record loss with configurable probability
+4. Tests verification success rates
+5. Reports statistics including retrieved records, lost records, signed records, and success rate
+
+Example output:
+```
+Expected records (1.txt to 200.txt): 200
+Retrieved records: 117
+Lost records: 83
+Signed records (checkpoints): 5
+Successful verifications: 99
+Success rate: 84.6%
+```
+
+## Configuration
+
+In `rec_api/body.py`, you can configure:
+- `LOSS_PROBABILITY`: Probability that a record is marked as lost (default: 0.0)
+- `PROTECT_CHECKPOINTS`: Whether to prevent checkpoints from being lost (default: True)
+
+For realistic testing, set `LOSS_PROBABILITY = 0.1` and `PROTECT_CHECKPOINTS = False`.
 
